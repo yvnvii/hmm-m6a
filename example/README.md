@@ -8,9 +8,9 @@ without downloading any external data.
 | file | what it is |
 |---|---|
 | `synthetic.fa` (+`.fai`) | 5 short transcripts, ~5 kb total, with DRACH motifs sprinkled in |
-| `synthetic.bam` (+`.bai`) | 1{,}800 simulated GLORI-seq reads (~30× coverage) |
+| `synthetic.bam` (+`.bai`) | 1,800 simulated GLORI-seq reads (~30× coverage) |
 | `synthetic.bed` | 5 BED6 intervals, one per transcript (input to the caller) |
-| `truth.bed` | 39 true m⁶A sites (used for validation only — NOT input to the caller) |
+| `truth.bed` | 39 true m⁶A sites (used for validation only; NOT input to the caller) |
 | `build_example.py` | the script that generates everything above (already committed; rerun only if you want to regenerate) |
 
 The BAM contains three kinds of adenosines:

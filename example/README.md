@@ -86,4 +86,4 @@ cd example
 python build_example.py
 ```
 
-The script is deterministic — same seed produces the same files.
+The script is deterministic; same seed produces the same files.

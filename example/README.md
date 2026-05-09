@@ -52,7 +52,41 @@ wrote calls.bed
 
 ## Validate
 
-Compare the called sites to the truth:
+The repo includes a validation script that compares your call output to
+the bundled truth BED:
+
+```bash
+python example/validate.py calls.tsv
+```
+
+Expected output (with the bundled seed):
+
+```
+Synthetic-example validation
+------------------------------------
+true m6A sites:    39
+HMM-called sites:  32
+
+TP = 32
+FP = 0
+FN = 7
+precision = 1.000
+recall    = 0.821
+F1        = 0.901
+
+OK: precision >= 0.90 and recall >= 0.70.
+```
+
+Exit code 0 means the install passes the bounds; exit code 1 means
+something is wrong with the install. Add `--strict` to require the call
+set to match the reference run exactly (TP=32, FP=0, FN=7); useful for CI.
+
+The script prints diagnostic details for any false positives or false
+negatives — for each missed site it shows the posteriors, coverage,
+A-rate, and DRACH context, so you can understand why the model did or
+did not call it.
+
+### Or do it inline in Python
 
 ```python
 import pandas as pd

@@ -1,7 +1,7 @@
 # Methods summary
 
 This document is a short reference for what the package implements. For the
-full derivation see Sections 2 and 3 of the accompanying manuscript.
+full derivation see the accompanying manuscript.
 
 ## Model
 
@@ -98,5 +98,4 @@ adenosine, on the transcript strand:
 ## Reproducibility
 
 The validation notebook `notebooks/m6a_hmm.ipynb` reproduces every number
-in the paper. Random seeds are fixed; the simulator and trainer share a
-single master seed.
+in the manuscript.

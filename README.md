@@ -78,10 +78,8 @@ accompanying paper, the public reference files used are:
 | `mm10.fa` (+`.fai`) | UCSC: <https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.fa.gz> | ~2.6 GB unzipped | mouse genome reference |
 | `gencode.vM25.annotation.gtf` | GENCODE: <https://www.gencodegenes.org/mouse/release_M25.html> | ~1.3 GB unzipped | gene annotation (used to derive a regions BED) |
 
-Neither file is bundled with this repository (both are too large and are
-already publicly maintained at the URLs above). The convention we use is
-to keep them under `data/` at the repo root; that path is gitignored, so
-they'll never be accidentally committed.
+Keep them under `data/` at the repo root; that path is gitignored, so
+they'll not be committed.
 
 ```bash
 mkdir -p data && cd data
@@ -119,7 +117,7 @@ head rnu_genes.bed
 For other transcript-type analyses, change the `$9 ~ /gene_type "..."/`
 filter (`protein_coding`, `lncRNA`, `miRNA`, etc.).
 
-### Two-stage workflow (recommended for many samples)
+### Two-stage workflow (recommended for real world samples)
 
 When processing several GLORI-seq samples, train once on a high-quality
 reference sample and reuse the fitted parameters for the rest. This both
@@ -179,9 +177,9 @@ print(df[df["call"]])
 
 ## Reproducing the paper benchmark
 
-The synthetic-data validation notebook lives in `notebooks/m6a_hmm.ipynb`.
+The validation notebook lives in `notebooks/m6a_hmm.ipynb`.
 Open in Jupyter and run all cells; with the published seeds, all numbers
-in the manuscript (Tables 1-5 and Figures 1-2) reproduce exactly.
+in the manuscript reproduce exactly.
 
 ## Layout
 
@@ -200,24 +198,21 @@ hmm-m6a/
 │   └── cli.py             `hmm-m6a` command-line interface
 ├── tests/
 │   └── test_hmm.py
-├── example/                       small synthetic dataset (committed)
+├── example/                       small synthetic dataset
 │   ├── README.md
 │   ├── build_example.py           regenerator script (deterministic)
-│   ├── synthetic.fa  (+.fai)      tiny reference (5 transcripts, ~5 kb)
+│   ├── synthetic.fa  (+.fai)      tiny reference (5 transcripts, 5 kb)
 │   ├── synthetic.bam (+.bai)      simulated GLORI-seq reads
 │   ├── synthetic.bed              regions to score
 │   └── truth.bed                  known m6A sites for validation
 ├── data/                          gitignored; place mm10.fa, GTF here
 │   └── .gitkeep
 ├── notebooks/
-│   └── m6a_hmm.ipynb              validation notebook from the paper
+│   └── m6a_hmm.ipynb              validation notebook from the manuscript
 └── docs/
     └── methods.md                 brief methods summary
 ```
 
-## Citation
-
-If you use this code, please cite:
 
 > Ogawa, Y. *A Hidden Markov Model framework for m⁶A detection from GLORI-seq.* (2025).
 

@@ -78,10 +78,8 @@ accompanying paper, the public reference files used are:
 | `mm10.fa` (+`.fai`) | UCSC: <https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.fa.gz> | ~2.6 GB unzipped | mouse genome reference |
 | `gencode.vM25.annotation.gtf` | GENCODE: <https://www.gencodegenes.org/mouse/release_M25.html> | ~1.3 GB unzipped | gene annotation (used to derive a regions BED) |
 
-Neither file is bundled with this repository (both are too large and are
-already publicly maintained at the URLs above). The convention we use is
-to keep them under `data/` at the repo root; that path is gitignored, so
-they'll never be accidentally committed.
+Keep them under `data/` at the repo root; that path is gitignored, so
+they'll not be committed.
 
 ```bash
 mkdir -p data && cd data

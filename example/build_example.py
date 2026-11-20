@@ -188,13 +188,18 @@ def simulate_reads(
             L = len(seq)
             true_set = truth_m6a[contig]
             art_set = artifact[contig]
+            # Transcript-strand adenosines are reference A on "+" transcripts
+            # and reference T on "-" transcripts; conversion shows as A->G and
+            # T->C respectively. Minus-strand reads are written as reverse
+            # alignments (flag 16), as a stranded GLORI library would produce.
+            tgt, conv = ("A", "G") if strand == "+" else ("T", "C")
 
             # For every adenosine on the *plus strand*, decide state and per-read
             # base. Reads themselves are independent uniform-tile reads.
             # We pre-compute per-position p_A so reads can sample from it.
             p_A = np.zeros(L)
             for i, base in enumerate(seq):
-                if base != "A":
+                if base != tgt:
                     continue
                 if i in true_set:
                     mu, kappa = PARAMS["M"]
@@ -219,16 +224,16 @@ def simulate_reads(
                 for _ in range(reads_per_start):
                     bases = list(ref_chunk)
                     for k, b in enumerate(bases):
-                        if b == "A":
+                        if b == tgt:
                             i = rstart + k
-                            # A retained with probability p_A[i], else converted to G
+                            # A retained with probability p_A[i], else converted
                             if rng.random() > p_A[i]:
-                                bases[k] = "G"
+                                bases[k] = conv
                     qseq = "".join(bases)
 
                     a = pysam.AlignedSegment(out.header)
                     a.query_name = f"r{rid}"; rid += 1
-                    a.flag = 0
+                    a.flag = 0 if strand == "+" else 16
                     a.reference_id = list(refs).index(contig)
                     a.reference_start = rstart
                     a.mapping_quality = 60

@@ -127,3 +127,99 @@ def test_hmm_params_serialise_roundtrip():
     assert np.allclose(p.mu, q.mu)
     assert np.allclose(p.kappa, q.kappa)
     assert np.allclose(p.p_drach, q.p_drach)
+
+
+def test_pileup_strand_handling(tmp_path):
+    """Minus-strand regions are complemented, and with a stranded library
+    antisense reads are excluded (they would otherwise look unconverted)."""
+    import pysam
+    from hmm_m6a.pileup import Region, pileup_bam
+
+    ref = "ACGTAATTGCAATTACGGATTACAGTTAACGT" * 4
+    fa = tmp_path / "r.fa"
+    fa.write_text(">c\n" + ref + "\n")
+    pysam.faidx(str(fa))
+    hdr = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "c", "LN": len(ref)}]}
+    bam = tmp_path / "r.bam"
+    with pysam.AlignmentFile(str(bam), "wb", header=hdr) as out:
+        k = 0
+        # minus-strand RNA, fully converted: genomic T -> C, reverse alignments
+        for _ in range(10):
+            a = pysam.AlignedSegment(out.header)
+            a.query_name = f"m{k}"; k += 1
+            a.flag = 16; a.reference_id = 0; a.reference_start = 0
+            a.mapping_quality = 60; a.cigar = ((0, len(ref)),)
+            a.query_sequence = ref.replace("T", "C")
+            a.query_qualities = [40] * len(ref)
+            out.write(a)
+    pysam.index(str(bam))
+    reg = [Region("r", "c", 0, len(ref), "-")]
+    # minus-strand region: every transcript A is covered and converted
+    (_, tr), = pileup_bam(str(bam), str(fa), reg, show_progress=False,
+                          library="single-forward")
+    assert tr.n[tr.A_idx].min() == 10 and tr.A_count[tr.A_idx].sum() == 0
+    # plus-strand region: these reads are antisense; stranded -> excluded
+    reg_p = [Region("r", "c", 0, len(ref), "+")]
+    (_, trp), = pileup_bam(str(bam), str(fa), reg_p, show_progress=False,
+                           library="single-forward")
+    assert trp.n.sum() == 0
+    # unstranded pooling counts them as unconverted A (the artefact we avoid)
+    (_, tru), = pileup_bam(str(bam), str(fa), reg_p, show_progress=False)
+    assert tru.A_count[tru.A_idx].min() == 10
+
+
+def test_four_state_model_and_ordering():
+    """The 4-state model (U, M, B, N) runs end to end, keeps N last after the
+    state-ordering step, and assigns a run of fully retained adenosines to N
+    rather than M."""
+    import numpy as np
+    from hmm_m6a.hmm import HMMParams, posterior_states
+    from hmm_m6a.train import TranscriptObs, _enforce_state_order
+
+    p = HMMParams.default(n_states=4)
+    assert p.n_states == 4 and np.allclose(p.T.sum(axis=1), 1)
+    # shuffle states and check the ordering constraint restores U, M, B, N
+    perm = np.array([3, 0, 2, 1])
+    shuffled = HMMParams(pi=p.pi[perm], T=p.T[perm][:, perm], mu=p.mu[perm],
+                         kappa=p.kappa[perm], p_drach=p.p_drach[perm])
+    back = _enforce_state_order(shuffled)
+    assert np.allclose(back.mu, p.mu)
+
+    L = 200
+    A_idx = np.arange(0, L, 4)
+    n = np.zeros(L, int); n[A_idx] = 40
+    A = np.zeros(L, int); A[A_idx] = 1
+    run = A_idx[(A_idx >= 80) & (A_idx < 120)]           # 10 adenosines, all retained
+    A[run] = 40
+    drach = np.zeros(L, bool)
+    g, _ = posterior_states(A_idx, A, n, drach, L, p)
+    assert g[run, 3].mean() > 0.9                        # N, not M
+    g3, _ = posterior_states(A_idx, A, n, drach, L, HMMParams.default())
+    assert g3[run, 1].mean() > 0.5                       # 3-state model calls them M
+
+
+def test_read_filter_drops_poorly_converted_reads(tmp_path):
+    """--max-unconverted removes reads that kept many adenosines."""
+    import pysam
+    from hmm_m6a.pileup import Region, pileup_bam
+
+    ref = "GCATGACTAGCAGTACAGGATCAGTAGCAATGCAGTCAGAT" * 3
+    fa = tmp_path / "r.fa"; fa.write_text(">c\n" + ref + "\n"); pysam.faidx(str(fa))
+    hdr = {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": "c", "LN": len(ref)}]}
+    bam = tmp_path / "r.bam"
+    with pysam.AlignmentFile(str(bam), "wb", header=hdr) as out:
+        for k in range(20):
+            a = pysam.AlignedSegment(out.header)
+            a.query_name = f"r{k}"; a.flag = 0; a.reference_id = 0; a.reference_start = 0
+            a.mapping_quality = 60; a.cigar = ((0, len(ref)),)
+            # 5 escaped molecules keep every A; 15 are fully converted
+            a.query_sequence = ref if k < 5 else ref.replace("A", "G")
+            a.query_qualities = [40] * len(ref)
+            out.write(a)
+    pysam.index(str(bam))
+    reg = [Region("r", "c", 0, len(ref), "+")]
+    (_, tr), = pileup_bam(str(bam), str(fa), reg, show_progress=False, library="single-forward")
+    assert tr.n[tr.A_idx].min() == 20 and tr.A_count[tr.A_idx].min() == 5
+    (_, tf), = pileup_bam(str(bam), str(fa), reg, show_progress=False,
+                          library="single-forward", max_unconverted=2)
+    assert tf.n[tf.A_idx].min() == 15 and tf.A_count[tf.A_idx].sum() == 0

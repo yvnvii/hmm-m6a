@@ -132,9 +132,9 @@ def test_synthetic_example_exact_reference_run(tmp_path: Path):
     fp = len(called - truth)
     fn = len(truth - called)
 
-    # Reference: TP=32, FP=0, FN=7
-    assert (tp, fp, fn) == (32, 0, 7), (
-        f"Got (TP, FP, FN) = ({tp}, {fp}, {fn}); expected (32, 0, 7). "
+    # Reference: TP=37, FP=0, FN=2
+    assert (tp, fp, fn) == (37, 0, 2), (
+        f"Got (TP, FP, FN) = ({tp}, {fp}, {fn}); expected (37, 0, 2). "
         "If you've changed any seeds or numerics this is informational only "
         "-- delete this test if intentional."
     )

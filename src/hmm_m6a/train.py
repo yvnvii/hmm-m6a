@@ -14,7 +14,6 @@ import numpy as np
 
 from hmm_m6a.hmm import (
     HMMParams,
-    K,
     emission_logprob,
     expected_xi_sum,
     forward_backward,
@@ -42,13 +41,17 @@ class TrainHistory:
 
 
 def _enforce_state_order(params: HMMParams) -> HMMParams:
-    """Permute states so that mu_U < mu_B < mu_M (i.e. index 0 = U, 1 = M, 2 = B).
+    """Permute states so that mu_U < mu_B < mu_M (index 0 = U, 1 = M, 2 = B),
+    and with four states mu_U < mu_B < mu_M < mu_N (index 3 = N).
 
     The permutation is applied jointly to pi, T, mu, kappa, and p_drach so
     that all parameters remain mutually consistent.
     """
-    order = np.argsort(params.mu)               # ascending mu: lowest, mid, highest
-    perm = np.array([order[0], order[2], order[1]])  # -> (U, M, B)
+    order = np.argsort(params.mu)               # ascending mu
+    if params.n_states == 4:
+        perm = np.array([order[0], order[2], order[1], order[3]])  # -> (U, M, B, N)
+    else:
+        perm = np.array([order[0], order[2], order[1]])  # -> (U, M, B)
     return HMMParams(
         pi=params.pi[perm],
         T=params.T[perm][:, perm],
@@ -82,6 +85,7 @@ def baum_welch(
     if params is None:
         params = HMMParams.default()
     params = params.copy()
+    K = params.n_states
     history = TrainHistory()
     prev_ll = -np.inf
 

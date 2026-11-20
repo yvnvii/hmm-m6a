@@ -46,7 +46,7 @@ pileup: 100% [5/5 regions]
 iter 1   logZ=-2310.12   mu=[0.018, 0.707, 0.265]   ...
 ...
 converged at iter 6
-wrote calls.tsv  (32 sites called)
+wrote calls.tsv  (37 sites called)
 wrote calls.bed
 ```
 
@@ -65,21 +65,21 @@ Expected output (with the bundled seed):
 Synthetic-example validation
 ------------------------------------
 true m6A sites:    39
-HMM-called sites:  32
+HMM-called sites:  37
 
-TP = 32
+TP = 37
 FP = 0
-FN = 7
+FN = 2
 precision = 1.000
-recall    = 0.821
-F1        = 0.901
+recall    = 0.949
+F1        = 0.974
 
 OK: precision >= 0.90 and recall >= 0.70.
 ```
 
 Exit code 0 means the install passes the bounds; exit code 1 means
 something is wrong with the install. Add `--strict` to require the call
-set to match the reference run exactly (TP=32, FP=0, FN=7); useful for CI.
+set to match the reference run exactly (TP=37, FP=0, FN=2); useful for CI.
 
 The script prints diagnostic details for any false positives or false
 negatives — for each missed site it shows the posteriors, coverage,
@@ -108,7 +108,7 @@ With the committed seed (`SEED=20251108` in `build_example.py`) you should
 see something close to:
 
 ```
-TP=32  FP=0  FN=7  precision=1.000  recall=0.821
+TP=37  FP=0  FN=2  precision=1.000  recall=0.949
 ```
 
 ## Regenerating

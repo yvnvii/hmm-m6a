@@ -18,8 +18,8 @@ from typing import Tuple
 import numpy as np
 from scipy.special import gammaln
 
-K = 3  # number of hidden states
-STATE_NAMES = ("U", "M", "B")
+K = 3  # default number of hidden states (U, M, B); 4 adds N
+STATE_NAMES = ("U", "M", "B", "N")
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +43,43 @@ class HMMParams:
     kappa: np.ndarray
     p_drach: np.ndarray
 
+    @property
+    def n_states(self) -> int:
+        return int(len(self.mu))
+
     @staticmethod
-    def default() -> "HMMParams":
+    def default(n_states: int = 3) -> "HMMParams":
         """Sensible data-informed initialisation. Used as the starting point
-        for Baum-Welch in the published validation experiments."""
+        for Baum-Welch in the published validation experiments.
+
+        n_states=4 adds the non-convertible state N: adenosines that stay
+        unconverted in essentially every molecule over a short stretch
+        (e.g. stably base-paired RNA). N has retention near 1, a long
+        expected run (self-transition 0.98, ~50 nt) and very rare entry, and the same DRACH
+        frequency as U and B, so it carries no motif preference.
+        """
+        if n_states == 4:
+            return HMMParams(
+                pi=np.array([0.94, 0.02, 0.03, 0.01]),
+                # Entry into N is made very rare (1e-5 from every state) and N
+                # is long-lived (self 0.98), so N is only chosen for a run of
+                # near-fully retained adenosines. An isolated high-level site
+                # cannot pay the entry+exit cost and stays with M. Chosen on
+                # simulated data (simulate_eval_bam.py): vs. entry 1e-3 this
+                # raised recall of high-stoichiometry m6A from 0.52 to 0.92 at
+                # a small cost in false positives (1 -> 10 per ~200 genes).
+                T=np.array([
+                    [0.98499, 0.00500, 0.01000, 0.00001],   # from U
+                    [0.29999, 0.65000, 0.05000, 0.00001],   # from M
+                    [0.09999, 0.02000, 0.88000, 0.00001],   # from B
+                    [0.01500, 0.00250, 0.00250, 0.98000],   # from N
+                ]),
+                mu=np.array([0.03, 0.65, 0.25, 0.97]),
+                kappa=np.array([60.0, 30.0, 25.0, 50.0]),
+                p_drach=np.array([0.30, 0.85, 0.30, 0.30]),
+            )
+        if n_states != 3:
+            raise ValueError("n_states must be 3 or 4")
         return HMMParams(
             pi=np.array([0.95, 0.02, 0.03]),
             T=np.array([
@@ -133,9 +166,11 @@ def emission_logprob(
         params:   HMMParams.
 
     Returns:
-        (L, 3) array of log-emission probabilities. Non-A rows are zero.
+        (L, K) array of log-emission probabilities (K = params.n_states).
+        Non-A rows are zero.
     """
-    log_e = np.zeros((L, K))
+    K_ = params.n_states
+    log_e = np.zeros((L, K_))
     if A_idx.size == 0:
         return log_e
 
@@ -144,7 +179,7 @@ def emission_logprob(
     n_obs = n[A_idx]
     drach_obs = drach[A_idx]
 
-    for z in range(K):
+    for z in range(K_):
         bb = log_betabinom_pmf(k_obs, n_obs, a[z], b[z])
         p_d = float(np.clip(params.p_drach[z], 1e-12, 1 - 1e-12))
         ctx = np.where(drach_obs, np.log(p_d), np.log(1 - p_d))

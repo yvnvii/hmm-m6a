@@ -57,7 +57,7 @@ def main() -> int:
     p.add_argument("--truth", default=str(DEFAULT_TRUTH),
                    help=f"path to truth BED (default: {DEFAULT_TRUTH})")
     p.add_argument("--strict", action="store_true",
-                   help="exit non-zero unless TP=32 FP=0 FN=7 exactly "
+                   help="exit non-zero unless TP=37 FP=0 FN=2 exactly "
                         "(only meaningful with the bundled seed)")
     args = p.parse_args()
 
@@ -108,12 +108,12 @@ def main() -> int:
 
     print()
     if args.strict:
-        ok = (tp == 32 and fp == 0 and fn == 7)
+        ok = (tp == 37 and fp == 0 and fn == 2)
         if ok:
             print("OK (strict): exactly matches the reference run.")
             return 0
         print("FAIL (strict): differs from the reference run "
-              "(expected TP=32 FP=0 FN=7).")
+              "(expected TP=37 FP=0 FN=2).")
         return 1
 
     ok = (prec >= MIN_PRECISION and rec >= MIN_RECALL)

@@ -6,6 +6,7 @@ Subcommands
     hmm-m6a train    --pileup pileup.tsv -o params.json
     hmm-m6a call     --pileup pileup.tsv --params params.json -o calls.tsv [--bed calls.bed]
     hmm-m6a run      --bam ... --fasta ... [--bed ...] -o calls.tsv
+    hmm-m6a default-params --states {3,4} -o params.json
 
 `run` does pileup + train + call in one invocation. Use the explicit
 subcommands when you want to inspect intermediates or reuse pretrained
@@ -101,7 +102,8 @@ def cmd_pileup(args: argparse.Namespace) -> int:
     regions = _resolve_regions(args.bam, args.bed)
     region_obs = pileup_bam(
         args.bam, args.fasta, regions,
-        min_mapq=args.min_mapq, min_baseq=args.min_baseq,
+        min_mapq=args.min_mapq, min_baseq=args.min_baseq, library=args.library,
+        max_unconverted=args.max_unconverted,
         show_progress=not args.quiet,
     )
     _pileup_to_tsv(region_obs, args.output)
@@ -112,7 +114,7 @@ def cmd_pileup(args: argparse.Namespace) -> int:
 def cmd_train(args: argparse.Namespace) -> int:
     region_obs = _tsv_to_pileup(args.pileup)
     transcripts = [tr for _, tr in region_obs]
-    init = HMMParams.default()
+    init = HMMParams.default(n_states=args.states)
     params, history = baum_welch(
         transcripts, init,
         n_iter=args.n_iter, lam=args.lam, tol=args.tol,
@@ -141,12 +143,23 @@ def cmd_call(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_default_params(args: argparse.Namespace) -> int:
+    """Write the default (untrained) parameters to JSON, e.g. to score samples
+    with fixed parameters via `call --params` or `run --params`."""
+    params = HMMParams.default(n_states=args.states)
+    Path(args.output).write_text(
+        json.dumps({"params": params.to_dict(), "version": __version__}, indent=2))
+    print(f"wrote {args.output} ({args.states}-state default parameters)", file=sys.stderr)
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """End-to-end: pileup -> train -> call, all in memory."""
     regions = _resolve_regions(args.bam, args.bed)
     region_obs = pileup_bam(
         args.bam, args.fasta, regions,
-        min_mapq=args.min_mapq, min_baseq=args.min_baseq,
+        min_mapq=args.min_mapq, min_baseq=args.min_baseq, library=args.library,
+        max_unconverted=args.max_unconverted,
         show_progress=not args.quiet,
     )
 
@@ -161,7 +174,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print("no regions had any pileup data; nothing to train on.", file=sys.stderr)
             return 1
         params, _ = baum_welch(
-            transcripts, HMMParams.default(),
+            transcripts, HMMParams.default(n_states=args.states),
             n_iter=args.n_iter, lam=args.lam, tol=args.tol,
             verbose=not args.quiet,
         )
@@ -192,9 +205,19 @@ def _add_pileup_args(p: argparse.ArgumentParser) -> None:
                         "(if omitted, every BAM contig under 2 Mb is used)")
     p.add_argument("--min-mapq", type=int, default=20)
     p.add_argument("--min-baseq", type=int, default=20)
+    p.add_argument("--library", default="unstranded",
+                   choices=["unstranded", "single-forward", "single-reverse",
+                            "R1-sense", "R1-antisense"],
+                   help="read orientation of a stranded library; GLORI A-less "
+                        "single-end reads = single-forward (default: unstranded)")
+    p.add_argument("--max-unconverted", type=int, default=-1,
+                   help="GLORI-style read filter: drop reads with more than this many "
+                        "unconverted adenosines (default -1 = keep all reads)")
 
 
 def _add_train_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--states", type=int, default=3, choices=[3, 4],
+                   help="3 = U/M/B (default); 4 adds N, a non-convertible state")
     p.add_argument("--n-iter", type=int, default=30)
     p.add_argument("--lam", type=float, default=1.0, help="Dirichlet pseudocount")
     p.add_argument("--tol", type=float, default=1e-3,
@@ -247,6 +270,11 @@ def build_parser() -> argparse.ArgumentParser:
     sr.add_argument("-o", "--output", required=True, help="output TSV of all per-A scores")
     sr.add_argument("--out-bed", default=None, help="optional BED6 of called sites")
     sr.set_defaults(func=cmd_run)
+
+    sd = sub.add_parser("default-params", help="write default (untrained) parameters to JSON")
+    sd.add_argument("--states", type=int, default=3, choices=[3, 4])
+    sd.add_argument("-o", "--output", required=True, help="output JSON path")
+    sd.set_defaults(func=cmd_default_params)
 
     return p
 

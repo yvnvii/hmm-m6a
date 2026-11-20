@@ -36,7 +36,7 @@ hmm-m6a run \
   --save-params fitted_params.json
 ```
 
-This finishes in under 10 seconds and should call ~32 of the 39 known true
+This finishes in under 10 seconds and should call ~37 of the 39 known true
 m⁶A sites with zero false positives. See `example/README.md` for how to
 validate the calls against the bundled truth BED.
 

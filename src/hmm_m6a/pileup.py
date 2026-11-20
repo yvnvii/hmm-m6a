@@ -22,11 +22,11 @@ each adenosine, using the standard:
 
 Strand handling
 ---------------
-Reads are taken on the genomic reference strand of the BAM. If your library
-is strand-specific, you should provide a stranded reference: i.e. process
-+/- strand contigs separately or run twice with reverse-complemented
-sequence. For unstranded data (mixing both strands at the same locus), the
-default behaviour over-pools but is conservative.
+Each region is scored on its own strand: for "-" regions the reference and
+the read bases are complemented, so counts always refer to transcript-strand
+adenosines. For stranded libraries pass `library=` so that only reads from
+the region's strand are counted (GLORI A-less sense reads: "single-forward").
+With library="unstranded" reads from both strands are pooled.
 
 Outputs
 -------
@@ -97,6 +97,91 @@ def _revcomp(s: str) -> str:
     return s.translate(_COMPLEMENT)[::-1]
 
 
+LIBRARIES = ("unstranded", "single-forward", "single-reverse", "R1-sense", "R1-antisense")
+
+
+def _rna_strand(aln: pysam.AlignedSegment, library: str) -> str:
+    """RNA strand a read came from, under the given library orientation."""
+    fwd = not aln.is_reverse
+    if library == "single-forward":
+        sense = fwd
+    elif library == "single-reverse":
+        sense = not fwd
+    elif library in ("R1-sense", "R1-antisense"):
+        r1 = (not aln.is_paired) or aln.is_read1
+        sense = (fwd == r1) if library == "R1-sense" else (fwd != r1)
+    else:
+        raise ValueError(f"unknown library type: {library}")
+    return "+" if sense else "-"
+
+
+def _read_on_strand(aln: pysam.AlignedSegment, strand: str, library: str) -> bool:
+    """True if the read derives from RNA on `strand` (always True if unstranded).
+
+    In a stranded GLORI library, a read from the opposite (antisense) strand
+    shows the complement of the transcript base, so an antisense read at a
+    transcript adenosine looks like an unconverted A. Such reads must be
+    excluded or they inflate A-retention wherever antisense transcription
+    overlaps the region.
+    """
+    if library == "unstranded":
+        return True
+    return _rna_strand(aln, library) == strand
+
+
+def _read_key(aln: pysam.AlignedSegment) -> tuple:
+    return (aln.query_name, aln.reference_start, aln.is_reverse, aln.is_read1)
+
+
+def _poorly_converted_reads(
+    bam: pysam.AlignmentFile,
+    fasta: Fasta,
+    region: Region,
+    min_mapq: int,
+    min_baseq: int,
+    library: str,
+    max_unconverted: int,
+    margin: int = 1000,
+) -> set:
+    """Keys of reads overlapping `region` that carry more than `max_unconverted`
+    unconverted transcript-strand adenosines anywhere along the read.
+
+    This is the GLORI-style read filter: GLORI's own caller discards reads with
+    several unconverted A's, because such molecules largely escaped the
+    chemistry (they are not informative about methylation at any one site).
+    """
+    lo = max(0, region.start - margin)
+    hi = region.end + margin
+    try:
+        ref = str(fasta[region.contig][lo:hi]).upper()
+    except (KeyError, ValueError):
+        return set()
+    tgt = "A" if region.strand == "+" else "T"
+    bad = set()
+    for aln in bam.fetch(region.contig, region.start, region.end):
+        if (aln.is_unmapped or aln.is_secondary or aln.is_supplementary
+                or aln.mapping_quality < min_mapq):
+            continue
+        if not _read_on_strand(aln, region.strand, library):
+            continue
+        q = aln.query_sequence
+        if q is None:
+            continue
+        quals = aln.query_qualities
+        unc = 0
+        for qp, rp in aln.get_aligned_pairs(matches_only=True):
+            k = rp - lo
+            if k < 0 or k >= len(ref) or ref[k] != tgt:
+                continue
+            if quals is not None and quals[qp] < min_baseq:
+                continue
+            if q[qp].upper() == tgt:
+                unc += 1
+        if unc > max_unconverted:
+            bad.add(_read_key(aln))
+    return bad
+
+
 # ---------------------------------------------------------------------------
 # Per-region pileup
 # ---------------------------------------------------------------------------
@@ -106,6 +191,8 @@ def _pileup_region(
     region: Region,
     min_mapq: int,
     min_baseq: int,
+    library: str = "unstranded",
+    max_unconverted: int = -1,
 ) -> TranscriptObs:
     """Build a TranscriptObs for one region by walking pysam's pileup."""
 
@@ -128,6 +215,12 @@ def _pileup_region(
     for i, base in enumerate(seq):
         if base == "A":
             drach[i] = _is_drach_at(seq, i)
+
+    bad_reads = (
+        _poorly_converted_reads(bam, fasta, region, min_mapq, min_baseq, library,
+                                max_unconverted)
+        if max_unconverted >= 0 else set()
+    )
 
     # We use truncate=True so pileup only emits columns inside [start, end).
     # min_base_quality / min_mapping_quality are passed to pysam directly.
@@ -160,6 +253,10 @@ def _pileup_region(
         for read in col.pileups:
             if read.is_del or read.is_refskip:
                 continue
+            if not _read_on_strand(read.alignment, region.strand, library):
+                continue
+            if bad_reads and _read_key(read.alignment) in bad_reads:
+                continue
             qpos = read.query_position
             if qpos is None:
                 continue
@@ -167,8 +264,7 @@ def _pileup_region(
             # If we're on the minus strand, the read base must be
             # complemented to compare against the transcript-strand sequence.
             if region.strand == "-":
-                base = _COMPLEMENT.get(base, base) if isinstance(_COMPLEMENT, dict) \
-                       else base.translate(_COMPLEMENT)
+                base = base.translate(_COMPLEMENT)
             if base == "A":
                 n_A += 1
             elif base == "G":
@@ -232,6 +328,8 @@ def pileup_bam(
     min_mapq: int = 20,
     min_baseq: int = 20,
     show_progress: bool = True,
+    library: str = "unstranded",
+    max_unconverted: int = -1,
 ) -> List[Tuple[Region, TranscriptObs]]:
     """Pile up per-adenosine A/G counts and compute DRACH context.
 
@@ -244,11 +342,18 @@ def pileup_bam(
         min_mapq: minimum read MAPQ.
         min_baseq: minimum base quality at the pileup column.
         show_progress: emit a tqdm bar.
+        library: read orientation of a stranded library ("single-forward" for
+            GLORI A-less sense reads, "single-reverse", "R1-sense",
+            "R1-antisense") or "unstranded" (keep reads from both strands).
+        max_unconverted: GLORI-style read filter; drop reads with more than
+            this many unconverted transcript adenosines (-1 = keep all reads).
 
     Returns:
         list of (Region, TranscriptObs) in the same order as `regions`.
     """
     # Auto-index BAM if needed
+    if library not in LIBRARIES:
+        raise ValueError(f"library must be one of {LIBRARIES}")
     if not _has_bai(bam_path):
         pysam.index(bam_path)
 
@@ -261,7 +366,8 @@ def pileup_bam(
             # Reference FASTA missing this contig (e.g. a _random decoy) - skip.
             continue
         try:
-            tr = _pileup_region(bam, fasta, r, min_mapq=min_mapq, min_baseq=min_baseq)
+            tr = _pileup_region(bam, fasta, r, min_mapq=min_mapq, min_baseq=min_baseq,
+                                library=library, max_unconverted=max_unconverted)
         except (ValueError, KeyError):
             # Contig present in FASTA but absent from BAM index, etc.
             continue

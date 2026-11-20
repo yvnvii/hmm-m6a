@@ -2,7 +2,7 @@
 
 A site at adenosine position t is called if all three of:
     P(M | O) >= tau          (default tau = 0.8)
-    P(M | O) > P(B | O)
+    P(M | O) > P(B | O)      (and > P(N | O) for the 4-state model)
     n_t >= n_min             (default n_min = 10)
 """
 from __future__ import annotations
@@ -59,6 +59,7 @@ def call_sites(
                 "pU": float(gamma[i, 0]),
                 "pM": float(gamma[i, 1]),
                 "pB": float(gamma[i, 2]),
+                **({"pN": float(gamma[i, 3])} if gamma.shape[1] > 3 else {}),
             })
     df = pd.DataFrame(rows)
     if df.empty:
@@ -68,6 +69,8 @@ def call_sites(
     call = (df["pM"] >= tau) & (df["n"] >= n_min)
     if require_M_gt_B:
         call &= df["pM"] > df["pB"]
+        if "pN" in df.columns:
+            call &= df["pM"] > df["pN"]
     df["call"] = call.values
     return df
 
